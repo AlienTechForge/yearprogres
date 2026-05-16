@@ -3,21 +3,26 @@ name: CI/CD
 on:
   push:
     branches:
+      - main
       - master
+    tags:
+      - 'v*'
   pull_request:
   workflow_dispatch:
 
 permissions:
   contents: read
   packages: write
+  id-token: write
 
 env:
-  IMAGE_NAME: ghcr.io/alientechforge/yearprogres
+  REGISTRY: ghcr.io
+  IMAGE_NAME: alientechforge/yearprogres
   NEXT_PUBLIC_URL: ${{ vars.NEXT_PUBLIC_URL || 'https://yearprogres.azndev.com' }}
 
 jobs:
   ci:
-    name: Lint, type-check, build
+    name: Lint, type-check, test, build
     runs-on: ubuntu-latest
     env:
       DB_HOST: mysql
@@ -44,6 +49,9 @@ jobs:
       - name: Type-check
         run: npm run type-check
 
+      - name: Test
+        run: npm test --if-present
+
       - name: Build
         run: npm run build
 
@@ -52,6 +60,9 @@ jobs:
     runs-on: ubuntu-latest
     needs: ci
     if: github.event_name != 'pull_request'
+    outputs:
+      image_digest: ${{ steps.push.outputs.digest }}
+      image_tags: ${{ steps.meta.outputs.tags }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -62,29 +73,43 @@ jobs:
       - name: Login to GHCR
         uses: docker/login-action@v3
         with:
-          registry: ghcr.io
+          registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=tag
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,prefix=sha-,format=long
+            type=raw,value=latest,enable={{is_default_branch}}
+
       - name: Build and push
+        id: push
         uses: docker/build-push-action@v6
         with:
           context: .
           push: true
           build-args: |
             NEXT_PUBLIC_URL=${{ env.NEXT_PUBLIC_URL }}
-          labels: |
-            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
-            org.opencontainers.image.revision=${{ github.sha }}
-          tags: |
-            ${{ env.IMAGE_NAME }}:latest
-            ${{ env.IMAGE_NAME }}:${{ github.sha }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: true
+          sbom: true
 
   deploy:
     name: Deploy
     runs-on: ubuntu-latest
     needs: image
-    if: github.ref == 'refs/heads/master'
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
     env:
       DEPLOY_HOST: ${{ secrets.DEPLOY_HOST || vars.DEPLOY_HOST }}
       DEPLOY_PORT: ${{ secrets.DEPLOY_PORT || vars.DEPLOY_PORT }}
@@ -92,7 +117,7 @@ jobs:
       DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
       GHCR_USERNAME: ${{ secrets.GHCR_USERNAME || vars.GHCR_USERNAME || github.actor }}
       GHCR_TOKEN: ${{ secrets.GHCR_TOKEN || secrets.GITHUB_TOKEN }}
-      IMAGE_REF: ghcr.io/alientechforge/yearprogres:${{ github.sha }}
+      IMAGE_REF: ghcr.io/alientechforge/yearprogres:sha-${{ github.sha }}
       DB_USER: ${{ secrets.DB_USER || vars.DB_USER }}
       DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
       DB_NAME: ${{ secrets.DB_NAME || vars.DB_NAME }}
