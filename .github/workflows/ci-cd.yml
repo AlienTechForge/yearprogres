@@ -97,18 +97,35 @@ jobs:
       DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
       DB_NAME: ${{ secrets.DB_NAME || vars.DB_NAME }}
     steps:
-      - name: Validate deploy configuration
+      - name: Check deploy configuration
+        id: deploy_config
         run: |
           set -euo pipefail
 
-          test -n "$DEPLOY_HOST"
-          test -n "$DEPLOY_USER"
-          test -n "$DEPLOY_SSH_KEY"
-          test -n "$DB_USER"
-          test -n "$DB_PASSWORD"
-          test -n "$DB_NAME"
+          missing=()
+
+          for name in DEPLOY_HOST DEPLOY_USER DEPLOY_SSH_KEY DB_USER DB_PASSWORD DB_NAME; do
+            if [ -z "${!name}" ]; then
+              missing+=("$name")
+            fi
+          done
+
+          if [ "${#missing[@]}" -gt 0 ]; then
+            {
+              echo "### Deployment skipped"
+              echo
+              echo "The GHCR image was built and pushed, but SSH deployment was skipped because these settings are missing:"
+              printf -- "- \`%s\`\n" "${missing[@]}"
+            } >> "$GITHUB_STEP_SUMMARY"
+
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "configured=true" >> "$GITHUB_OUTPUT"
 
       - name: Deploy over SSH
+        if: steps.deploy_config.outputs.configured == 'true'
         run: |
           set -euo pipefail
 

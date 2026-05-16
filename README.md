@@ -65,7 +65,7 @@ docker run -d \
 
 ## CI/CD
 
-GitHub Actions workflow 位於 `.github/workflows/ci-cd.yml`，會在 PR 執行 lint、type-check、build，`master` 分支推送時建立 GHCR 映像並透過 SSH 部署。
+GitHub Actions workflow 位於 `.github/workflows/ci-cd.yml`，會在 PR 執行 lint、type-check、build，`master` 分支推送時建立 GHCR 映像。若部署設定齊全，workflow 會接著透過 SSH 部署；若部署設定缺少必要值，會跳過部署但保留已推送的 GHCR 映像。
 
 映像位置：
 
