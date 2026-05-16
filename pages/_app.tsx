@@ -4,6 +4,7 @@ import { Space_Grotesk } from "next/font/google";
 import { Analytics } from "@vercel/analytics/react";
 import { ErrorBoundary } from "react-error-boundary";
 import { useRouter } from "next/router";
+import Link from "next/link";
 
 const spaceGrotesk = Space_Grotesk({ subsets: ["latin"] });
 
@@ -20,9 +21,9 @@ function ErrorFallback({ error, resetErrorBoundary }: { error: Error; resetError
         >
           重試
         </button>
-        <a href="/" className="block mt-4 underline">
+        <Link href="/" className="block mt-4 underline">
           返回首頁
-        </a>
+        </Link>
       </div>
     </div>
   );

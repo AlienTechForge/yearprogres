@@ -12,10 +12,6 @@ export default function CreateProgressModal({
   onClose,
   onSuccess,
 }: CreateProgressModalProps) {
-  // 如果模態框不開啟，直接返回null
-  if (!isOpen) {
-    return null;
-  }
   const [name, setName] = useState("");
   const [startDate, setStartDate] = useState("");
   const [startHour, setStartHour] = useState("");
@@ -84,28 +80,21 @@ export default function CreateProgressModal({
     return options;
   }, []);
 
-  // 設置預設日期和時間
-  const setDefaultDateTime = () => {
-    const now = DateTime.local();
-    const tomorrow = now.plus({ days: 1 });
-    
-    // 當前時間作為開始時間預設值
-    setStartDate(now.toFormat("yyyy-MM-dd"));
-    setStartHour(now.toFormat("HH"));
-    setStartMinute(now.toFormat("mm"));
-    setStartSecond("00");
-    
-    // 明天作為結束時間預設值
-    setEndDate(tomorrow.toFormat("yyyy-MM-dd"));
-    setEndHour("00");
-    setEndMinute("00");
-    setEndSecond("00");
-  };
+  useEffect(() => {
+    if (isOpen && !startDate && !endDate) {
+      const now = DateTime.local();
+      const tomorrow = now.plus({ days: 1 });
 
-  // 在初次渲染時設置預設值
-  if (!startDate && !startTime && !endDate && !endTime) {
-    setDefaultDateTime();
-  }
+      setStartDate(now.toFormat("yyyy-MM-dd"));
+      setStartHour(now.toFormat("HH"));
+      setStartMinute(now.toFormat("mm"));
+      setStartSecond("00");
+      setEndDate(tomorrow.toFormat("yyyy-MM-dd"));
+      setEndHour("00");
+      setEndMinute("00");
+      setEndSecond("00");
+    }
+  }, [isOpen, startDate, endDate]);
 
   // 處理關閉模態框
   const handleClose = () => {
@@ -206,6 +195,10 @@ export default function CreateProgressModal({
       setLoading(false);
     }
   };
+
+  if (!isOpen) {
+    return null;
+  }
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -382,7 +375,7 @@ export default function CreateProgressModal({
             <button
               type="button"
               className="bg-gray-500 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline"
-              onClick={onClose}
+              onClick={handleClose}
               disabled={loading}
             >
               取消

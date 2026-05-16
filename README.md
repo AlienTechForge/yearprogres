@@ -30,6 +30,9 @@
 # 安裝相依套件
 npm install
 
+# 建立本機環境變數
+cp .env.example .env.local
+
 # 啟動開發環境
 npm run dev
 
@@ -46,7 +49,7 @@ npm start
 # 建立 Docker 映像
 docker build -t yearprogress:latest .
 
-# 執行容器（需要 MySQL 數據庫）
+# 執行容器（需要 MySQL 資料庫）
 docker run -d \
   -p 4001:3000 \
   -e DB_HOST="mysql" \
@@ -55,10 +58,35 @@ docker run -d \
   -e DB_PASSWORD="YourPassword" \
   -e DB_NAME="YourDatabase" \
   --network=MySql \
-  --name yp-app yearprogress:latest
+  --name yp-app ghcr.io/alientechforge/yearprogres:latest
 ```
 
 詳細的部署指南可參考 `docker_commands.md` 文件。
+
+## CI/CD
+
+GitHub Actions workflow 位於 `.github/workflows/ci-cd.yml`，會在 PR 執行 lint、type-check、build，`master` 分支推送時建立 GHCR 映像並透過 SSH 部署。
+
+映像位置：
+
+```text
+ghcr.io/alientechforge/yearprogres:latest
+ghcr.io/alientechforge/yearprogres:<commit-sha>
+```
+
+需要設定的 GitHub Secrets：
+
+- `DEPLOY_HOST`
+- `DEPLOY_PORT`（未設定時使用 22）
+- `DEPLOY_USER`
+- `DEPLOY_SSH_KEY`
+- `GHCR_USERNAME`（GHCR package 是 private 時才需要）
+- `GHCR_TOKEN`（GHCR package 是 private 時才需要，需有 `read:packages`）
+- `DB_USER`
+- `DB_PASSWORD`
+- `DB_NAME`
+
+推送 GHCR 使用 GitHub Actions 內建的 `GITHUB_TOKEN`，不需要 Docker Hub secrets。部署容器會使用 `DB_HOST=mysql`；本機 `.env.example` 預設使用 `DB_HOST=192.168.0.10`。
 
 ## 線上版本
 

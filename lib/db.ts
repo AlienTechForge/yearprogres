@@ -1,48 +1,54 @@
-import mysql from 'mysql2/promise';
+import mysql, { PoolOptions, RowDataPacket } from 'mysql2/promise';
+import { randomInt } from 'crypto';
 
-// 創建一個連接池
-let poolConfig;
+const DEFAULT_LOCAL_DB_HOST = '192.168.0.10';
+const DEFAULT_DB_PORT = 3306;
+const DEFAULT_DB_USER = 'YearProgres';
+const DEFAULT_DB_PASSWORD = '5YSwPDW7wnBnbGai';
+const DEFAULT_DB_NAME = 'YearProgres';
 
-try {
-  // 先嘗試使用環境變數
-  poolConfig = {
-    host: process.env.DB_HOST || 'mysql', // 預設使用正確的容器名稱
-    port: parseInt(process.env.DB_PORT || '3306'),
-    user: process.env.DB_USER || 'YearProgres',
-    password: process.env.DB_PASSWORD || '5YSwPDW7wnBnbGai',
-    database: process.env.DB_NAME || 'YearProgres',
-    waitForConnections: true,
-    connectionLimit: 3,
-    queueLimit: 0,
-    connectTimeout: 60000, // 連接超時時間延長到 60 秒
-  };
-  
-  console.log('嘗試使用数据库配置:', JSON.stringify(poolConfig, null, 2));
-  
-} catch (error) {
-  console.error('讀取環境變數失敗:', error);
-  // 如果發生錯誤，使用預設配置
-  poolConfig = {
-    host: '192.168.0.10',
-    port: 3306,
-    user: 'YearProgres',
-    password: '5YSwPDW7wnBnbGai',
-    database: 'YearProgres',
-    waitForConnections: true,
-    connectionLimit: 3,
-    queueLimit: 0,
-    connectTimeout: 60000,
-  };
-}
+const poolConfig: PoolOptions = {
+  host: process.env.DB_HOST || DEFAULT_LOCAL_DB_HOST,
+  port: Number(process.env.DB_PORT || DEFAULT_DB_PORT),
+  user: process.env.DB_USER || DEFAULT_DB_USER,
+  password: process.env.DB_PASSWORD || DEFAULT_DB_PASSWORD,
+  database: process.env.DB_NAME || DEFAULT_DB_NAME,
+  waitForConnections: true,
+  connectionLimit: Number(process.env.DB_CONNECTION_LIMIT || 5),
+  queueLimit: 0,
+  connectTimeout: Number(process.env.DB_CONNECT_TIMEOUT_MS || 10000),
+};
+
+console.info('資料庫配置:', {
+  host: poolConfig.host,
+  port: poolConfig.port,
+  user: poolConfig.user,
+  database: poolConfig.database,
+  connectionLimit: poolConfig.connectionLimit,
+});
 
 const pool = mysql.createPool(poolConfig);
+let initPromise: Promise<boolean> | null = null;
 
 // 初始化資料庫，確保表格存在
 export async function initDb() {
+  if (initPromise) {
+    return initPromise;
+  }
+
+  initPromise = ensureSchema();
+  const initialized = await initPromise;
+
+  if (!initialized) {
+    initPromise = null;
+  }
+
+  return initialized;
+}
+
+async function ensureSchema() {
   try {
-    const conn = await pool.getConnection();
-    // 檢查自訂進度條表格是否存在，不存在則創建
-    await conn.query(`
+    await pool.query(`
       CREATE TABLE IF NOT EXISTS custom_progress_bars (
         id VARCHAR(10) PRIMARY KEY,
         name VARCHAR(255) NOT NULL,
@@ -52,8 +58,7 @@ export async function initDb() {
         created_by_ip VARCHAR(150)
       )
     `);
-    conn.release();
-    console.log('資料庫初始化成功');
+
     return true;
   } catch (error) {
     console.error('資料庫初始化失敗:', error);
@@ -64,27 +69,39 @@ export async function initDb() {
 // 創建自訂進度條
 export async function createCustomProgressBar(name: string, startTime: Date, endTime: Date, ip?: string) {
   try {
-    const id = generateId();
-    const conn = await pool.getConnection();
-    
-    // 處理IP地址，如果太長則只保留前面一部分
+    const initialized = await initDb();
+    if (!initialized) {
+      return { success: false, error: '資料庫初始化失敗' };
+    }
+
     let processedIp = ip;
     if (ip && ip.length > 140) {
-      // 取得第一個 IP 地址，通常是用戶端的真實IP
       processedIp = ip.split(',')[0].trim();
-      // 再次確保長度符合要求
       if (processedIp.length > 140) {
         processedIp = processedIp.substring(0, 140);
       }
     }
-    
-    await conn.query(
-      'INSERT INTO custom_progress_bars (id, name, start_time, end_time, created_by_ip) VALUES (?, ?, ?, ?, ?)',
-      [id, name, startTime, endTime, processedIp || null]
-    );
-    
-    conn.release();
-    return { id, success: true };
+
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const id = generateId();
+
+      try {
+        await pool.execute(
+          'INSERT INTO custom_progress_bars (id, name, start_time, end_time, created_by_ip) VALUES (?, ?, ?, ?, ?)',
+          [id, name, startTime, endTime, processedIp || null]
+        );
+
+        return { id, success: true };
+      } catch (error) {
+        if (isDuplicateEntry(error)) {
+          continue;
+        }
+
+        throw error;
+      }
+    }
+
+    return { success: false, error: '產生進度條 ID 時發生衝突，請再試一次' };
   } catch (error) {
     console.error('創建自訂進度條失敗:', error);
     return { success: false, error: '創建進度條時發生錯誤' };
@@ -94,15 +111,16 @@ export async function createCustomProgressBar(name: string, startTime: Date, end
 // 獲取自訂進度條信息
 export async function getCustomProgressBar(id: string) {
   try {
-    const conn = await pool.getConnection();
-    
-    const [rows] = await conn.query(
+    const initialized = await initDb();
+    if (!initialized) {
+      return { success: false, error: '資料庫初始化失敗' };
+    }
+
+    const [rows] = await pool.execute<RowDataPacket[]>(
       'SELECT id, name, start_time, end_time FROM custom_progress_bars WHERE id = ?',
       [id]
     );
-    
-    conn.release();
-    
+
     if (Array.isArray(rows) && rows.length > 0) {
       return { 
         success: true, 
@@ -117,14 +135,23 @@ export async function getCustomProgressBar(id: string) {
   }
 }
 
-// 生成短ID (6個字符)
+// 生成短ID (8個字符)
 function generateId() {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
   let id = '';
   
-  for (let i = 0; i < 6; i++) {
-    id += chars.charAt(Math.floor(Math.random() * chars.length));
+  for (let i = 0; i < 8; i++) {
+    id += chars.charAt(randomInt(chars.length));
   }
   
   return id;
+}
+
+function isDuplicateEntry(error: unknown) {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    (error as { code?: string }).code === 'ER_DUP_ENTRY'
+  );
 }

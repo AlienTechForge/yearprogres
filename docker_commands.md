@@ -9,32 +9,32 @@
 docker build -t yearprogress:latest .
 ```
 
-## 登入 Docker Hub
+## 登入 GHCR
 
 ```bash
-# 登入您的 Docker Hub 帳號
-docker login
+# 使用 GitHub 帳號與具備 write:packages 權限的 token 登入
+echo "$GHCR_TOKEN" | docker login ghcr.io -u Alien7666 --password-stdin
 ```
 
-## 標記映像為 Docker Hub 格式
+## 標記映像為 GHCR 格式
 
 ```bash
-# 將本地映像標記為 Docker Hub 格式
-docker tag yearprogress:latest alien7666/yearprogress:latest
+# 將本地映像標記為 GHCR 格式
+docker tag yearprogress:latest ghcr.io/alientechforge/yearprogres:latest
 ```
 
-## 上傳映像到 Docker Hub
+## 上傳映像到 GHCR
 
 ```bash
-# 推送標記的映像到 Docker Hub
-docker push alien7666/yearprogress:latest
+# 推送標記的映像到 GHCR
+docker push ghcr.io/alientechforge/yearprogres:latest
 ```
 
-## 從 Docker Hub 拉取映像
+## 從 GHCR 拉取映像
 
 ```bash
-# 拉取映像從 Docker Hub
-docker pull alien7666/yearprogress:latest
+# 拉取映像從 GHCR
+docker pull ghcr.io/alientechforge/yearprogres:latest
 ```
 
 ## 使用Docker網路連接容器（推薦使用）
@@ -45,8 +45,8 @@ docker pull alien7666/yearprogress:latest
 # 1. 創建一個名為 MySql 的網路
 docker network create MySql
 
-# 2. 如果您的MySQL容器已存在，將它連接到新網路（假設容器名為 mysql-container）
-docker network connect MySql mysql-container
+# 2. 如果您的MySQL容器已存在，將它連接到新網路（假設容器名為 mysql）
+docker network connect MySql mysql
 
 # 3. 啟動應用程式容器，使用相同的網路並指定資料庫主機為容器名稱
 docker run -d \
@@ -57,14 +57,16 @@ docker run -d \
   -e DB_PASSWORD="5YSwPDW7wnBnbGai" \
   -e DB_NAME="YearProgres" \
   --network=MySql \
-  --name yp-app alien7666/yearprogress:latest
+  --restart=unless-stopped \
+  --name yp-app \
+  ghcr.io/alientechforge/yearprogres:latest
 ```
 
 這種方法的優勢：
 
 1. 可以將MySQL容器的端口只暴露給內部網路，提高安全性
 2. 可以直接使用容器名稱進行連接，像在同一台機器上一樣
-3. 適用不同的網路拓樓
+3. 適用不同的網路拓撲
 4. 如果您的應用需要暴露特定的端口，仍然可以使用 -p 參數
 
 需要注意的是，您需要確保您的MySQL容器與應用容器使用的用戶名、密碼和資料庫名稱是匹配的。

@@ -1,8 +1,10 @@
 .git
 node_modules
 npm-debug.log
-Dockerfile
-.dockerignore
 .next
 .vercel
 .env*.local
+.env
+.env.*
+!.env.example
+!.env.production.example

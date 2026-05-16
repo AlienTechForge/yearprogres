@@ -9,10 +9,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   try {
     const { name, startTime, endTime } = req.body;
+    const trimmedName = typeof name === 'string' ? name.trim() : '';
 
     // 驗證必要參數
-    if (!name || !endTime) {
+    if (!trimmedName || !endTime) {
       return res.status(400).json({ success: false, error: '名稱和結束時間為必填項' });
+    }
+
+    if (trimmedName.length > 255) {
+      return res.status(400).json({ success: false, error: '名稱最多只能 255 個字元' });
     }
 
     // 驗證時間格式
@@ -42,17 +47,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     // 創建自訂進度條
     const result = await createCustomProgressBar(
-      name,
+      trimmedName,
       startTimeDate,
       endTimeDate,
       typeof ip === 'string' ? ip : Array.isArray(ip) ? ip[0] : undefined
     );
 
     if (result.success) {
+      const baseUrl = (process.env.NEXT_PUBLIC_URL || 'https://yearprogres.azndev.com').replace(/\/$/, '');
+
       return res.status(201).json({
         success: true,
         id: result.id,
-        url: `${process.env.NEXT_PUBLIC_URL || 'https://yearprogres.azndev.com'}/${result.id}`
+        url: `${baseUrl}/${result.id}`
       });
     } else {
       return res.status(500).json({ success: false, error: result.error });
