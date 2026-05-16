@@ -80,13 +80,11 @@ ghcr.io/alientechforge/yearprogres:<commit-sha>
 - `DEPLOY_PORT`（未設定時使用 22）
 - `DEPLOY_USER`
 - `DEPLOY_SSH_KEY`
-- `GHCR_USERNAME`（GHCR package 是 private 時才需要）
-- `GHCR_TOKEN`（GHCR package 是 private 時才需要，需有 `read:packages`）
 - `DB_USER`
 - `DB_PASSWORD`
 - `DB_NAME`
 
-推送 GHCR 使用 GitHub Actions 內建的 `GITHUB_TOKEN`，不需要 Docker Hub secrets。部署容器會使用 `DB_HOST=mysql`；本機 `.env.example` 預設使用 `DB_HOST=192.168.0.10`。
+`DEPLOY_HOST`、`DEPLOY_PORT`、`DEPLOY_USER`、`DB_USER`、`DB_NAME` 可放在 org variables 或 secrets；`DEPLOY_SSH_KEY` 和 `DB_PASSWORD` 必須放在 secrets。推送與部署拉取 GHCR image 都使用 GitHub Actions 內建的 `GITHUB_TOKEN`，不需要 Docker Hub secrets，也不需要額外 GHCR token。部署容器會使用 `DB_HOST=mysql`；本機 `.env.example` 預設使用 `DB_HOST=192.168.0.10`。
 
 ## 線上版本
 
