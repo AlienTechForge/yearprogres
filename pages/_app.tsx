@@ -2,14 +2,14 @@ import "../styles/globals.css";
 import type { AppProps } from "next/app";
 import { Space_Grotesk } from "next/font/google";
 import { Analytics } from "@vercel/analytics/react";
-import { ErrorBoundary } from "react-error-boundary";
+import { ErrorBoundary, type FallbackProps } from "react-error-boundary";
 import { useRouter } from "next/router";
 import Link from "next/link";
 
 const spaceGrotesk = Space_Grotesk({ subsets: ["latin"] });
 
 // 錯誤回退組件
-function ErrorFallback({ error, resetErrorBoundary }: { error: Error; resetErrorBoundary: () => void }) {
+function ErrorFallback({ resetErrorBoundary }: FallbackProps) {
   return (
     <div className="h-screen w-screen flex items-center justify-center">
       <div className="text-center p-8 max-w-md">
