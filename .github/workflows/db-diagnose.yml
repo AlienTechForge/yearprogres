@@ -68,7 +68,7 @@ jobs:
             --database="${DB_NAME}" \
             --table \
             -e "
-              SELECT @@hostname AS mysql_hostname, @@port AS mysql_port, DATABASE() AS database_name, CURRENT_USER() AS current_user;
+              SELECT @@hostname AS mysql_hostname, @@port AS mysql_port, DATABASE() AS database_name, CURRENT_USER() AS current_user_name;
               SELECT id, name, start_time, end_time, created_at, created_by_ip
               FROM custom_progress_bars
               WHERE id = '${PROGRESS_ID}';
