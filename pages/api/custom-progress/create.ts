@@ -1,4 +1,6 @@
 import { NextApiRequest, NextApiResponse } from 'next';
+import { DateTime } from 'luxon';
+import { normalizeTimeZone, parseClientDateTime } from '../../../lib/customProgressTime';
 import { createCustomProgressBar } from '../../../lib/db';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -8,8 +10,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   try {
-    const { name, startTime, endTime } = req.body;
+    const { name, startTime, endTime, timeZone } = req.body;
     const trimmedName = typeof name === 'string' ? name.trim() : '';
+    const creatorTimeZone = normalizeTimeZone(timeZone);
 
     // 驗證必要參數
     if (!trimmedName || !endTime) {
@@ -21,35 +24,40 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     // 驗證時間格式
-    const endTimeDate = new Date(endTime);
-    if (isNaN(endTimeDate.getTime())) {
+    const endDateTime = parseClientDateTime(endTime, creatorTimeZone);
+    if (!endDateTime.isValid) {
       return res.status(400).json({ success: false, error: '無效的結束時間格式' });
+    }
+
+    if (endDateTime <= DateTime.now().setZone(creatorTimeZone)) {
+      return res.status(400).json({ success: false, error: '結束時間必須設定在未來' });
     }
     
     // 設置開始時間，如果沒有提供則使用當前時間
-    let startTimeDate: Date;
+    let startDateTime: DateTime;
     if (startTime) {
-      startTimeDate = new Date(startTime);
-      if (isNaN(startTimeDate.getTime())) {
+      startDateTime = parseClientDateTime(startTime, creatorTimeZone);
+      if (!startDateTime.isValid) {
         return res.status(400).json({ success: false, error: '無效的開始時間格式' });
       }
     } else {
-      startTimeDate = new Date();
+      startDateTime = DateTime.now().setZone(creatorTimeZone);
     }
 
     // 獲取客戶端 IP
     const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || null;
 
     // 驗證開始時間早於結束時間
-    if (startTimeDate >= endTimeDate) {
+    if (startDateTime >= endDateTime) {
       return res.status(400).json({ success: false, error: '開始時間必須早於結束時間' });
     }
 
     // 創建自訂進度條
     const result = await createCustomProgressBar(
       trimmedName,
-      startTimeDate,
-      endTimeDate,
+      startDateTime.toUTC().toJSDate(),
+      endDateTime.toUTC().toJSDate(),
+      creatorTimeZone,
       typeof ip === 'string' ? ip : Array.isArray(ip) ? ip[0] : undefined
     );
 

@@ -1,5 +1,6 @@
 import mysql, { PoolOptions, RowDataPacket } from 'mysql2/promise';
 import { randomInt } from 'crypto';
+import { DEFAULT_CUSTOM_PROGRESS_TIME_ZONE, normalizeTimeZone } from './customProgressTime';
 
 const DEFAULT_LOCAL_DB_HOST = '192.168.0.10';
 const DEFAULT_DB_PORT = 3306;
@@ -17,6 +18,7 @@ const poolConfig: PoolOptions = {
   connectionLimit: Number(process.env.DB_CONNECTION_LIMIT || 5),
   queueLimit: 0,
   connectTimeout: Number(process.env.DB_CONNECT_TIMEOUT_MS || 10000),
+  timezone: 'Z',
 };
 
 console.info('資料庫配置:', {
@@ -54,10 +56,19 @@ async function ensureSchema() {
         name VARCHAR(255) NOT NULL,
         start_time DATETIME NOT NULL,
         end_time DATETIME NOT NULL,
+        time_zone VARCHAR(64) NOT NULL DEFAULT '${DEFAULT_CUSTOM_PROGRESS_TIME_ZONE}',
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         created_by_ip VARCHAR(150)
       )
     `);
+
+    await ensureColumnExists(
+      'time_zone',
+      `ALTER TABLE custom_progress_bars
+       ADD COLUMN time_zone VARCHAR(64) NOT NULL
+       DEFAULT '${DEFAULT_CUSTOM_PROGRESS_TIME_ZONE}'
+       AFTER end_time`
+    );
 
     return true;
   } catch (error) {
@@ -66,8 +77,30 @@ async function ensureSchema() {
   }
 }
 
+async function ensureColumnExists(columnName: string, alterStatement: string) {
+  const [rows] = await pool.execute<RowDataPacket[]>(
+    `SELECT COUNT(*) AS count
+     FROM information_schema.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE()
+       AND TABLE_NAME = 'custom_progress_bars'
+       AND COLUMN_NAME = ?`,
+    [columnName]
+  );
+
+  const count = Number(rows[0]?.count ?? 0);
+  if (count === 0) {
+    await pool.query(alterStatement);
+  }
+}
+
 // 創建自訂進度條
-export async function createCustomProgressBar(name: string, startTime: Date, endTime: Date, ip?: string) {
+export async function createCustomProgressBar(
+  name: string,
+  startTime: Date,
+  endTime: Date,
+  timeZone: string,
+  ip?: string
+) {
   try {
     const initialized = await initDb();
     if (!initialized) {
@@ -82,13 +115,15 @@ export async function createCustomProgressBar(name: string, startTime: Date, end
       }
     }
 
+    const normalizedTimeZone = normalizeTimeZone(timeZone);
+
     for (let attempt = 0; attempt < 5; attempt += 1) {
       const id = generateId();
 
       try {
         await pool.execute(
-          'INSERT INTO custom_progress_bars (id, name, start_time, end_time, created_by_ip) VALUES (?, ?, ?, ?, ?)',
-          [id, name, startTime, endTime, processedIp || null]
+          'INSERT INTO custom_progress_bars (id, name, start_time, end_time, time_zone, created_by_ip) VALUES (?, ?, ?, ?, ?, ?)',
+          [id, name, startTime, endTime, normalizedTimeZone, processedIp || null]
         );
 
         return { id, success: true };
@@ -117,7 +152,9 @@ export async function getCustomProgressBar(id: string) {
     }
 
     const [rows] = await pool.execute<RowDataPacket[]>(
-      'SELECT id, name, start_time, end_time FROM custom_progress_bars WHERE id = ?',
+      `SELECT id, name, start_time, end_time, time_zone
+       FROM custom_progress_bars
+       WHERE id = ?`,
       [id]
     );
 

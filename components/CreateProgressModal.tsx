@@ -37,6 +37,7 @@ export default function CreateProgressModal({
   const [useCurrentTime, setUseCurrentTime] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [timeZone, setTimeZone] = useState("UTC");
 
   // 生成小時選項
   const hourOptions = useMemo(() => {
@@ -81,8 +82,21 @@ export default function CreateProgressModal({
   }, []);
 
   useEffect(() => {
+    if (isOpen) {
+      const detectedTimeZone =
+        Intl.DateTimeFormat().resolvedOptions().timeZone ||
+        DateTime.local().zoneName ||
+        "UTC";
+
+      setTimeZone(detectedTimeZone);
+    }
+
     if (isOpen && !startDate && !endDate) {
-      const now = DateTime.local();
+      const detectedTimeZone =
+        Intl.DateTimeFormat().resolvedOptions().timeZone ||
+        DateTime.local().zoneName ||
+        "UTC";
+      const now = DateTime.now().setZone(detectedTimeZone);
       const tomorrow = now.plus({ days: 1 });
 
       setStartDate(now.toFormat("yyyy-MM-dd"));
@@ -140,26 +154,32 @@ export default function CreateProgressModal({
       
       // 組合日期和時間
       const endTimeString = `${endDate}T${endTime}`;
-      const endTimeObj = new Date(endTimeString);
+      const endDateTime = DateTime.fromISO(endTimeString, { zone: timeZone });
       
       // 設定開始時間
-      let startTimeObj;
+      let startDateTime;
       if (useCurrentTime) {
-        startTimeObj = new Date(); // 使用當前時間
+        startDateTime = DateTime.now().setZone(timeZone);
       } else {
         const startTimeString = `${startDate}T${startTime}`;
-        startTimeObj = new Date(startTimeString);
+        startDateTime = DateTime.fromISO(startTimeString, { zone: timeZone });
+      }
+
+      if (!endDateTime.isValid || !startDateTime.isValid) {
+        setError("時間格式無效");
+        setLoading(false);
+        return;
       }
 
       // 確保結束時間在未來
-      if (endTimeObj <= new Date()) {
+      if (endDateTime <= DateTime.now().setZone(timeZone)) {
         setError("結束時間必須設定在未來");
         setLoading(false);
         return;
       }
       
       // 確保開始時間早於結束時間
-      if (startTimeObj >= endTimeObj) {
+      if (startDateTime >= endDateTime) {
         setError("開始時間必須早於結束時間");
         setLoading(false);
         return;
@@ -173,8 +193,9 @@ export default function CreateProgressModal({
         },
         body: JSON.stringify({
           name: name.trim(),
-          startTime: useCurrentTime ? undefined : startTimeObj.toISOString(),
-          endTime: endTimeObj.toISOString(),
+          startTime: useCurrentTime ? undefined : `${startDate}T${startTime}`,
+          endTime: endTimeString,
+          timeZone,
         }),
       });
 
@@ -204,6 +225,7 @@ export default function CreateProgressModal({
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-lg p-6 w-full max-w-md">
         <h2 className="text-2xl font-bold mb-4 text-indigo-600">創建自訂進度條</h2>
+        <p className="text-xs text-gray-500 mb-4">建立時區：{timeZone}</p>
         
         {error && (
           <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">

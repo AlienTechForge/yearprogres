@@ -3,11 +3,11 @@ import Link from "next/link";
 import { DateTime, Duration } from "luxon";
 import { useEffect, useState } from "react";
 import { showFireworks } from "../../lib/fireworks/showFireworks";
-import { calculateYearProgress } from "../../lib/utils";
 import { NextSeo } from "next-seo";
 import Icon from "@mdi/react";
 import { mdiInstagram, mdiGithub } from "@mdi/js";
 import { getCustomProgressBar } from "../../lib/db";
+import { normalizeTimeZone, readUtcDateTime } from "../../lib/customProgressTime";
 
 const TIMER_INTERVAL_MS = 1000; // 1s
 const IS_CLOSE_THRESHOLD = 10; // 調整為只在最後10秒顯示倒數
@@ -17,39 +17,45 @@ interface Props {
   totalTimeInSeconds: number;
   progressName: string;
   id: string;
+  timeZone: string;
+  startTimeStr: string;
+  endTimeStr: string;
   error?: string;
 }
 
-const CustomProgress: NextPage<Props & { endTimeStr?: string }> = ({
+const CustomProgress: NextPage<Props> = ({
   timeLeftInSeconds,
   totalTimeInSeconds,
   progressName,
   id,
+  timeZone,
+  startTimeStr,
   error,
   endTimeStr,
 }) => {
-  const [timeLeftDuration, setTimeLeftDuration] = useState<Duration>();
-  const currentTimeLeftInSeconds = timeLeftDuration
-    ? Math.floor(timeLeftDuration.as("seconds"))
-    : timeLeftInSeconds;
+  const [timeLeftDuration, setTimeLeftDuration] = useState<Duration>(() =>
+    durationFromSeconds(timeLeftInSeconds)
+  );
+  const currentTimeLeftInSeconds = Math.floor(timeLeftDuration.as("seconds"));
 
   const progressPercent = calculateProgressPercent(currentTimeLeftInSeconds, totalTimeInSeconds);
+  const progressPercentLabel = formatProgressPercent(progressPercent);
+  const startTimeDisplay = formatDateTimeInZone(startTimeStr, timeZone);
+  const endTimeDisplay = formatDateTimeInZone(endTimeStr, timeZone);
   // 倒計時結束時顯示完成了！
   const messageToDisplay = currentTimeLeftInSeconds <= 0 ? "完成了！" : currentTimeLeftInSeconds;
   // 只在最後10秒內觸發特殊顯示
   const isCloseToEnd = currentTimeLeftInSeconds > 0 && currentTimeLeftInSeconds <= IS_CLOSE_THRESHOLD;
 
   useEffect(() => {
-    // 使用傳入的endTimeStr參數確保精確到秒
-    const endTime = endTimeStr ? new Date(endTimeStr) : new Date(Date.now() + timeLeftInSeconds * 1000);
+    const endTime = DateTime.fromISO(endTimeStr, { zone: "utc" }).setZone(timeZone);
     
     // 設定更新剩餘時間的函數
     const updateTimeLeft = () => {
-      const now = DateTime.local();
-      const end = DateTime.fromJSDate(endTime);
+      const now = DateTime.now().setZone(timeZone);
       
       // 計算精確的剩餘時間，包含毫秒
-      const remainingDuration = end.diff(now, [
+      const remainingDuration = endTime.diff(now, [
         "months",
         "days",
         "hours",
@@ -61,14 +67,7 @@ const CustomProgress: NextPage<Props & { endTimeStr?: string }> = ({
       // 確保剩餘時間沒有負值
       if (remainingDuration.as('milliseconds') <= 0) {
         // 如果時間已經結束，將所有值設為0
-        setTimeLeftDuration(Duration.fromObject({
-          months: 0,
-          days: 0,
-          hours: 0,
-          minutes: 0,
-          seconds: 0,
-          milliseconds: 0
-        }));
+        setTimeLeftDuration(zeroDuration());
         
         // 從定時器中清除不必要的頻繁更新
         if (intervalIdRef) {
@@ -96,7 +95,7 @@ const CustomProgress: NextPage<Props & { endTimeStr?: string }> = ({
         clearInterval(intervalIdRef);
       }
     };
-  }, [timeLeftInSeconds, endTimeStr]);  // 當timeLeftInSeconds或endTimeStr變化時重新計算
+  }, [endTimeStr, timeZone]);  // 當結束時間或建立時區變化時重新計算
 
   // 追蹤是否已顯示煙火
   const [fireworksShown, setFireworksShown] = useState(false);
@@ -122,10 +121,10 @@ const CustomProgress: NextPage<Props & { endTimeStr?: string }> = ({
     );
   }
 
-  const url = `${process.env.NEXT_PUBLIC_URL || 'https://yearprogress.azndev.com'}/custom/${id}`;
+  const url = `${process.env.NEXT_PUBLIC_URL || 'https://yearprogres.azndev.com'}/custom/${id}`;
   const siteName = "自訂進度條";
   const title = `${progressName}`;
-  const description = `${progressPercent}%`;
+  const description = `${progressPercentLabel}%`;
 
   return (
     <div>
@@ -139,7 +138,7 @@ const CustomProgress: NextPage<Props & { endTimeStr?: string }> = ({
           description,
           images: [
             { 
-              url: `${process.env.NEXT_PUBLIC_URL || 'https://yearprogress.azndev.com'}/api/og?title=${encodeURIComponent(progressName)}&percentPassed=${progressPercent}`, 
+              url: `${process.env.NEXT_PUBLIC_URL || 'https://yearprogres.azndev.com'}/api/og?title=${encodeURIComponent(progressName)}&percentPassed=${progressPercentLabel}`,
               width: 1200, 
               height: 630, 
               alt: title 
@@ -162,15 +161,20 @@ const CustomProgress: NextPage<Props & { endTimeStr?: string }> = ({
           </section>
         ) : (
           <section className="m-auto flex flex-col items-center gap-8 w-full h-full max-w-2xl p-4 min-h-0">
-            <h1 className="mt-auto font-black text-6xl">{progressName}</h1>
+            <h1 className="mt-auto font-black text-6xl break-words text-center">{progressName}</h1>
             <div className="h-8 w-full border flex-shrink-0">
               <div
                 className="bg-gray-300 h-full"
                 style={{ width: `${progressPercent}%` }}
               />
             </div>
-            <h2 className="font-extrabold text-4xl">{`${progressPercent}%`}</h2>
-            <div className="mt-auto font-mono min-h-[32px] text-xs">
+            <h2 className="font-extrabold text-4xl">{`${progressPercentLabel}%`}</h2>
+            <div className="text-center text-sm leading-6 text-gray-600">
+              <div>開始：{startTimeDisplay}</div>
+              <div>結束：{endTimeDisplay}</div>
+              <div>時區：{timeZone}</div>
+            </div>
+            <div className="mt-auto font-mono min-h-[40px] text-base sm:text-lg text-center">
               {timeLeftDuration && (
                 <span>
                   {currentTimeLeftInSeconds <= 0 ? (
@@ -218,30 +222,68 @@ const CustomProgress: NextPage<Props & { endTimeStr?: string }> = ({
 
 // 計算進度條百分比
 function calculateProgressPercent(currentTimeLeftInSeconds: number, totalTimeInSeconds: number) {
-  // 總時間 = 結束時間 - 開始時間
-  const totalTime = totalTimeInSeconds;
-  // 已過時間 = 總時間 - 剩餘時間
-  const elapsedTime = totalTime - currentTimeLeftInSeconds;
+  if (totalTimeInSeconds <= 0) {
+    return currentTimeLeftInSeconds <= 0 ? 100 : 0;
+  }
 
-  // 百分比 = (已過時間 / 總時間) * 100
-  return Math.floor((elapsedTime / totalTime) * 100);
+  const elapsedTime = totalTimeInSeconds - Math.max(0, currentTimeLeftInSeconds);
+  const percent = (elapsedTime / totalTimeInSeconds) * 100;
+
+  return Math.min(100, Math.max(0, percent));
 }
 
-// 計算剩餘時間
-function calculateTimeLeft(totalSeconds: number) {
-  const now = DateTime.local();
-  const end = now.plus({ seconds: totalSeconds });
+function formatProgressPercent(percent: number) {
+  if (!Number.isFinite(percent) || percent <= 0) {
+    return "0";
+  }
 
-  return end.diff(now, [
+  if (percent >= 100) {
+    return "100";
+  }
+
+  if (percent < 1) {
+    return percent.toFixed(2);
+  }
+
+  if (percent < 10) {
+    return percent.toFixed(1);
+  }
+
+  return Math.floor(percent).toString();
+}
+
+function durationFromSeconds(seconds: number) {
+  return Duration.fromObject({ seconds: Math.max(0, seconds) }).shiftTo(
     "months",
     "days",
     "hours",
     "minutes",
     "seconds",
-  ]);
+  );
 }
 
-export const getServerSideProps: GetServerSideProps<Props & { endTimeStr?: string }> = async ({
+function zeroDuration() {
+  return Duration.fromObject({
+    months: 0,
+    days: 0,
+    hours: 0,
+    minutes: 0,
+    seconds: 0,
+    milliseconds: 0
+  });
+}
+
+function formatDateTimeInZone(value: string, timeZone: string) {
+  const dateTime = DateTime.fromISO(value, { zone: "utc" }).setZone(timeZone);
+
+  if (!dateTime.isValid) {
+    return "";
+  }
+
+  return dateTime.toFormat("yyyy-MM-dd HH:mm:ss");
+}
+
+export const getServerSideProps: GetServerSideProps<Props> = async ({
   params,
 }) => {
   try {
@@ -257,21 +299,41 @@ export const getServerSideProps: GetServerSideProps<Props & { endTimeStr?: strin
           totalTimeInSeconds: 100, // 預設值，不會實際使用
           progressName: "",
           id: id,
+          timeZone: normalizeTimeZone(undefined),
+          startTimeStr: "",
+          endTimeStr: "",
           error: "找不到指定的進度條",
         },
       };
     }
 
     const data = result.data as any;
-    const startTime = new Date(data.start_time);
-    const endTime = new Date(data.end_time);
-    const now = new Date();
+    const timeZone = normalizeTimeZone(data.time_zone);
+    const startTime = readUtcDateTime(data.start_time);
+    const endTime = readUtcDateTime(data.end_time);
+
+    if (!startTime.isValid || !endTime.isValid) {
+      return {
+        props: {
+          timeLeftInSeconds: 0,
+          totalTimeInSeconds: 100,
+          progressName: "",
+          id: id,
+          timeZone,
+          startTimeStr: "",
+          endTimeStr: "",
+          error: "進度條時間資料無效",
+        },
+      };
+    }
+
+    const now = DateTime.utc();
     
     // 計算剩餘時間（秒）
-    const timeLeftInSeconds = Math.max(0, Math.floor((endTime.getTime() - now.getTime()) / 1000));
+    const timeLeftInSeconds = Math.max(0, Math.floor(endTime.diff(now, "seconds").seconds));
     
     // 計算總時間（秒） = 結束時間 - 開始時間
-    const totalTimeInSeconds = Math.floor((endTime.getTime() - startTime.getTime()) / 1000);
+    const totalTimeInSeconds = Math.max(1, Math.floor(endTime.diff(startTime, "seconds").seconds));
 
     return {
       props: {
@@ -279,7 +341,9 @@ export const getServerSideProps: GetServerSideProps<Props & { endTimeStr?: strin
         totalTimeInSeconds,
         progressName: data.name,
         id: id,
-        endTimeStr: endTime.toISOString(), // 將結束時間傳遞給前端
+        timeZone,
+        startTimeStr: startTime.toUTC().toISO() || "",
+        endTimeStr: endTime.toUTC().toISO() || "",
       },
     };
   } catch (error) {
@@ -290,6 +354,9 @@ export const getServerSideProps: GetServerSideProps<Props & { endTimeStr?: strin
         totalTimeInSeconds: 100, // 預設值，不會實際使用
         progressName: "",
         id: params?.id as string || "",
+        timeZone: normalizeTimeZone(undefined),
+        startTimeStr: "",
+        endTimeStr: "",
         error: "獲取進度條資訊時發生錯誤",
       },
     };
