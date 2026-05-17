@@ -69,7 +69,10 @@ const YearProgress: NextPage<Props> = ({
   const siteName = "年進度條";
   const title = `${ogYear} 年進度條`;
   const description = `${ogPercentPassed}%`;
-  const imageUrl = `${process.env.NEXT_PUBLIC_URL}/api/og?currentYear=${ogYear}&percentPassed=${ogPercentPassed}`;
+  const baseUrl = process.env.NEXT_PUBLIC_URL || "https://yearprogres.azndev.com";
+  const imageUrl = `${baseUrl}/api/og?currentYear=${encodeURIComponent(
+    String(ogYear)
+  )}&percentPassed=${encodeURIComponent(String(ogPercentPassed))}`;
 
   return (
     <div>
@@ -179,19 +182,42 @@ export const getServerSideProps: GetServerSideProps<Props> = async ({
   const timeZone = (req.headers["x-vercel-ip-timezone"] as string) || "UTC";
   const timeLeftDuration = calculateYearTimeLeft(timeZone);
   const timeLeftinSeconds = Math.floor(timeLeftDuration.as("seconds"));
-  const ogPercentPassed = query.ogPercent as number | undefined;
-  const ogYear = query.ogYear as number | undefined;
+  const calculatedProgress = calculateYearProgress(timeLeftinSeconds);
+  const currentYear = DateTime.local({ zone: timeZone }).year;
 
   // 處理資料庫初始化
   
   return {
     props: {
       timeLeftInSeconds: timeLeftinSeconds,
-      ogPercentPassed:
-        ogPercentPassed ?? calculateYearProgress(timeLeftinSeconds),
-      ogYear: ogYear ?? DateTime.local().year,
+      ogPercentPassed: parseOgPercent(query.ogPercent, calculatedProgress),
+      ogYear: parseOgYear(query.ogYear, currentYear),
     },
   };
 };
+
+function firstQueryValue(value: string | string[] | undefined) {
+  return Array.isArray(value) ? value[0] : value;
+}
+
+function parseOgPercent(value: string | string[] | undefined, fallback: number) {
+  const percent = Number(firstQueryValue(value));
+
+  if (!Number.isFinite(percent)) {
+    return fallback;
+  }
+
+  return Math.min(100, Math.max(0, Math.floor(percent)));
+}
+
+function parseOgYear(value: string | string[] | undefined, fallback: number) {
+  const year = Number(firstQueryValue(value));
+
+  if (!Number.isInteger(year) || year < 1900 || year > 3000) {
+    return fallback;
+  }
+
+  return year;
+}
 
 export default YearProgress;

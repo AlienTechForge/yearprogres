@@ -1,6 +1,7 @@
 import type { NextApiRequest } from "next";
 
 const CUSTOM_PROGRESS_ID_PATTERN = /^[A-Za-z0-9]{8,10}$/;
+const MAX_RATE_LIMIT_BUCKETS = 5000;
 const rateLimitBuckets = new Map<string, { count: number; resetAt: number }>();
 
 export function isValidCustomProgressId(value: unknown): value is string {
@@ -8,13 +9,22 @@ export function isValidCustomProgressId(value: unknown): value is string {
 }
 
 export function getClientIp(req: NextApiRequest) {
-  const forwardedFor = firstHeaderValue(req.headers["x-forwarded-for"]);
+  const cloudflareIp = sanitizeHeaderValue(firstHeaderValue(req.headers["cf-connecting-ip"]));
+  if (cloudflareIp) {
+    return cloudflareIp;
+  }
+
+  const realIp = sanitizeHeaderValue(firstHeaderValue(req.headers["x-real-ip"]));
+  if (realIp) {
+    return realIp;
+  }
+
+  const forwardedFor = sanitizeHeaderValue(firstHeaderValue(req.headers["x-forwarded-for"]));
   if (forwardedFor) {
     return forwardedFor.split(",")[0].trim();
   }
 
-  const realIp = firstHeaderValue(req.headers["x-real-ip"]);
-  return realIp || req.socket.remoteAddress || "unknown";
+  return sanitizeHeaderValue(req.socket.remoteAddress) || "unknown";
 }
 
 export function isJsonRequest(req: NextApiRequest) {
@@ -57,8 +67,9 @@ export function consumeRateLimit(key: string, limit: number, windowMs: number) {
   const bucket = rateLimitBuckets.get(key);
 
   if (!bucket || bucket.resetAt <= now) {
-    rateLimitBuckets.set(key, { count: 1, resetAt: now + windowMs });
     pruneRateLimitBuckets(now);
+    evictOldestRateLimitBuckets();
+    rateLimitBuckets.set(key, { count: 1, resetAt: now + windowMs });
     return { allowed: true, retryAfter: 0 };
   }
 
@@ -74,7 +85,7 @@ export function consumeRateLimit(key: string, limit: number, windowMs: number) {
 }
 
 export function hasControlCharacters(value: string) {
-  return /[\u0000-\u001F\u007F]/.test(value);
+  return /[\u0000-\u001F\u007F-\u009F\u202A-\u202E\u2066-\u2069]/u.test(value);
 }
 
 function firstHeaderValue(value: string | string[] | undefined) {
@@ -90,7 +101,7 @@ function isAllowedUrl(value: string, allowedHosts: Set<string>) {
 }
 
 function pruneRateLimitBuckets(now: number) {
-  if (rateLimitBuckets.size < 1000) {
+  if (rateLimitBuckets.size < MAX_RATE_LIMIT_BUCKETS) {
     return;
   }
 
@@ -99,4 +110,19 @@ function pruneRateLimitBuckets(now: number) {
       rateLimitBuckets.delete(key);
     }
   }
+}
+
+function evictOldestRateLimitBuckets() {
+  while (rateLimitBuckets.size >= MAX_RATE_LIMIT_BUCKETS) {
+    const oldestKey = rateLimitBuckets.keys().next().value;
+    if (!oldestKey) {
+      return;
+    }
+
+    rateLimitBuckets.delete(oldestKey);
+  }
+}
+
+function sanitizeHeaderValue(value: string | undefined) {
+  return value?.replace(/[\u0000-\u001F\u007F-\u009F]/g, "").trim();
 }

@@ -13,16 +13,33 @@ const securityHeaders = [
     value: [
       "default-src 'self'",
       `script-src ${scriptSrc.join(' ')}`,
+      "script-src-attr 'none'",
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data: https:",
       "font-src 'self' data:",
       "connect-src 'self' https://vitals.vercel-insights.com https://*.vercel-insights.com",
+      "media-src 'self'",
       "object-src 'none'",
+      "frame-src 'none'",
+      "worker-src 'self' blob:",
+      "manifest-src 'self'",
       "base-uri 'self'",
       "form-action 'self'",
       "frame-ancestors 'none'",
       'upgrade-insecure-requests',
     ].join('; '),
+  },
+  ...(isProduction
+    ? [
+        {
+          key: 'Strict-Transport-Security',
+          value: 'max-age=63072000; includeSubDomains',
+        },
+      ]
+    : []),
+  {
+    key: 'Cross-Origin-Opener-Policy',
+    value: 'same-origin',
   },
   {
     key: 'X-Content-Type-Options',
@@ -49,10 +66,6 @@ const nextConfig = {
   // 確保環境變數能夠注入
   env: {
     NEXT_PUBLIC_URL: process.env.NEXT_PUBLIC_URL || 'https://yearprogres.azndev.com'
-  },
-  // 忽略ESLint错误
-  eslint: {
-    ignoreDuringBuilds: true
   },
   async headers() {
     return [
