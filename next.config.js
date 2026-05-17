@@ -1,10 +1,18 @@
 /** @type {import('next').NextConfig} */
+const isProduction = process.env.NODE_ENV === 'production'
+const scriptSrc = [
+  "'self'",
+  "'unsafe-inline'",
+  !isProduction && "'unsafe-eval'",
+  'https://va.vercel-scripts.com',
+].filter(Boolean)
+
 const securityHeaders = [
   {
     key: 'Content-Security-Policy',
     value: [
       "default-src 'self'",
-      "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://va.vercel-scripts.com",
+      `script-src ${scriptSrc.join(' ')}`,
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data: https:",
       "font-src 'self' data:",
@@ -36,6 +44,7 @@ const securityHeaders = [
 
 const nextConfig = {
   reactStrictMode: true,
+  poweredByHeader: false,
   output: 'standalone',
   // 確保環境變數能夠注入
   env: {

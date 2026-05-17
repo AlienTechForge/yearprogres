@@ -160,11 +160,6 @@ function getProvidedCronSecret(req: NextApiRequest) {
     return headerValue[0];
   }
 
-  const queryValue = req.query.secret;
-  if (typeof queryValue === "string") {
-    return queryValue;
-  }
-
   return undefined;
 }
 
