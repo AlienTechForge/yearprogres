@@ -12,6 +12,7 @@ permissions:
   packages: write
 
 env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   IMAGE_NAME: ghcr.io/alientechforge/yearprogres
   CONTAINER_NAME: yp-app
   NEXT_PUBLIC_URL: ${{ vars.NEXT_PUBLIC_URL || 'https://yearprogres.azndev.com' }}
