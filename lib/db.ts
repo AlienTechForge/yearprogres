@@ -5,14 +5,13 @@ import { DEFAULT_CUSTOM_PROGRESS_TIME_ZONE, normalizeTimeZone } from './customPr
 const DEFAULT_LOCAL_DB_HOST = '192.168.0.10';
 const DEFAULT_DB_PORT = 3306;
 const DEFAULT_DB_USER = 'YearProgres';
-const DEFAULT_DB_PASSWORD = '5YSwPDW7wnBnbGai';
 const DEFAULT_DB_NAME = 'YearProgres';
 
 const poolConfig: PoolOptions = {
   host: process.env.DB_HOST || DEFAULT_LOCAL_DB_HOST,
   port: Number(process.env.DB_PORT || DEFAULT_DB_PORT),
   user: process.env.DB_USER || DEFAULT_DB_USER,
-  password: process.env.DB_PASSWORD || DEFAULT_DB_PASSWORD,
+  password: process.env.DB_PASSWORD,
   database: process.env.DB_NAME || DEFAULT_DB_NAME,
   waitForConnections: true,
   connectionLimit: Number(process.env.DB_CONNECTION_LIMIT || 5),
@@ -21,13 +20,15 @@ const poolConfig: PoolOptions = {
   timezone: 'Z',
 };
 
-console.info('資料庫配置:', {
-  host: poolConfig.host,
-  port: poolConfig.port,
-  user: poolConfig.user,
-  database: poolConfig.database,
-  connectionLimit: poolConfig.connectionLimit,
-});
+if (process.env.NODE_ENV !== 'production') {
+  console.info('資料庫配置:', {
+    host: poolConfig.host,
+    port: poolConfig.port,
+    user: poolConfig.user,
+    database: poolConfig.database,
+    connectionLimit: poolConfig.connectionLimit,
+  });
+}
 
 const pool = mysql.createPool(poolConfig);
 let initPromise: Promise<boolean> | null = null;
@@ -50,6 +51,11 @@ export async function initDb() {
 
 async function ensureSchema() {
   try {
+    if (!process.env.DB_PASSWORD) {
+      console.error('資料庫初始化失敗: DB_PASSWORD 未設定');
+      return false;
+    }
+
     await pool.query(`
       CREATE TABLE IF NOT EXISTS custom_progress_bars (
         id VARCHAR(10) PRIMARY KEY,

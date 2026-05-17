@@ -8,6 +8,7 @@ import Icon from "@mdi/react";
 import { mdiInstagram, mdiGithub } from "@mdi/js";
 import { getCustomProgressBar } from "../lib/db";
 import { normalizeTimeZone, readUtcDateTime } from "../lib/customProgressTime";
+import { isValidCustomProgressId } from "../lib/security";
 
 const TIMER_INTERVAL_MS = 1000; // 1s
 const IS_CLOSE_THRESHOLD = 10; // 調整為只在最後10秒顯示倒數
@@ -282,6 +283,21 @@ export const getServerSideProps: GetServerSideProps<Props> = async ({
 }) => {
   try {
     const id = params?.id as string;
+
+    if (!isValidCustomProgressId(id)) {
+      return {
+        props: {
+          timeLeftInSeconds: 0,
+          totalTimeInSeconds: 100,
+          progressName: "",
+          id: "",
+          timeZone: normalizeTimeZone(undefined),
+          startTimeStr: "",
+          endTimeStr: "",
+          error: "無效的進度條 ID",
+        },
+      };
+    }
 
     // 從資料庫獲取自訂進度條資訊
     const result = await getCustomProgressBar(id);

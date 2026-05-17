@@ -51,11 +51,9 @@ docker network connect MySql mysql
 # 3. 啟動應用程式容器，使用相同的網路並指定資料庫主機為容器名稱
 docker run -d \
   -p 4001:3000 \
+  --env-file .env.production.local \
   -e DB_HOST="mysql" \
   -e DB_PORT="3306" \
-  -e DB_USER="YearProgres" \
-  -e DB_PASSWORD="5YSwPDW7wnBnbGai" \
-  -e DB_NAME="YearProgres" \
   --network=MySql \
   --restart=unless-stopped \
   --name yp-app \
@@ -69,4 +67,5 @@ docker run -d \
 3. 適用不同的網路拓撲
 4. 如果您的應用需要暴露特定的端口，仍然可以使用 -p 參數
 
-需要注意的是，您需要確保您的MySQL容器與應用容器使用的用戶名、密碼和資料庫名稱是匹配的。
+需要注意的是，您需要確保 `.env.production.local` 內的 `DB_USER`、`DB_PASSWORD`
+和 `DB_NAME` 與 MySQL 容器一致。不要把真實密碼寫進 repo。

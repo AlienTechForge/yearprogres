@@ -1,7 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from "next";
+import { timingSafeEqual } from "crypto";
 import moment from "moment-timezone";
-// @ts-ignore
-import FB from "fb";
 import TwitterApi from "twitter-api-v2";
 
 declare global {
@@ -12,42 +11,59 @@ declare global {
       TWITTER_APP_SECRET: string;
       TWITTER_ACCESS_TOKEN: string;
       TWITTER_ACCESS_SECRET: string;
+      CRON_SECRET?: string;
+      FB_PAGE_ID?: string;
     }
   }
 }
 
 const timeZone = `Pacific/Auckland`;
-FB.setAccessToken(process.env.FB_ACCESS_TOKEN);
+const DEFAULT_FB_PAGE_ID = "108123055076949";
 
-console.log("Creating Twitter client...", process.env.TWITTER_APP_KEY);
-const twitterClient = new TwitterApi(
-  new TwitterApi({
+const postToFacebook = async (message: string, url: string) => {
+  const accessToken = process.env.FB_ACCESS_TOKEN;
+  if (!accessToken) {
+    return "skipped";
+  }
+
+  const pageId = process.env.FB_PAGE_ID || DEFAULT_FB_PAGE_ID;
+  const response = await fetch(`https://graph.facebook.com/${encodeURIComponent(pageId)}/feed`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body: new URLSearchParams({
+      message,
+      link: url,
+      access_token: accessToken,
+    }),
+  });
+
+  if (!response.ok) {
+    console.error("Facebook post failed", { status: response.status });
+    throw new Error("facebook post failed");
+  }
+
+  return "success";
+};
+
+const postToTwitter = async (message: string) => {
+  if (
+    !process.env.TWITTER_APP_KEY ||
+    !process.env.TWITTER_APP_SECRET ||
+    !process.env.TWITTER_ACCESS_TOKEN ||
+    !process.env.TWITTER_ACCESS_SECRET
+  ) {
+    return "skipped";
+  }
+
+  const twitterClient = new TwitterApi({
     appKey: process.env.TWITTER_APP_KEY,
     appSecret: process.env.TWITTER_APP_SECRET,
     accessToken: process.env.TWITTER_ACCESS_TOKEN,
     accessSecret: process.env.TWITTER_ACCESS_SECRET,
-  })
-);
-
-const postToFacebook = async (message: string, url: string) => {
-  return new Promise((resolve, reject) => {
-    FB.api(
-      "/108123055076949/feed",
-      "POST",
-      { message, link: url },
-      function (response: any) {
-        if (response.error) {
-          console.error(response.error);
-          reject(response.error);
-          return;
-        }
-        resolve(response);
-      }
-    );
   });
-};
 
-const postToTwitter = async (message: string) => {
   return twitterClient.v2.tweet(message);
 };
 
@@ -66,7 +82,16 @@ const calculatePercentPassed = (startDate: any) => {
 };
 
 const SocialMediaRobot = async (req: NextApiRequest, res: NextApiResponse) => {
-  console.log("Running YearProgress robot....");
+  if (req.method !== "GET" && req.method !== "POST") {
+    return res.status(405).json({ error: "方法不允許" });
+  }
+
+  if (!isAuthorizedCronRequest(req)) {
+    return res.status(process.env.CRON_SECRET ? 403 : 503).json({ error: "cron 未啟用" });
+  }
+
+  res.setHeader("Cache-Control", "private, no-store");
+  console.log("Running YearProgress robot.");
 
   const now = moment.tz(timeZone);
   const todayPercentPassed = calculatePercentPassed(now);
@@ -81,21 +106,22 @@ const SocialMediaRobot = async (req: NextApiRequest, res: NextApiResponse) => {
   let result = { fb: "", twitter: "" };
   if (todayPercentPassed > yesterdayPercentPassed) {
   try {
-    await postToFacebook(message, url);
-    console.log("Posted to Facebook.");
-    result.fb = "success";
-  } catch (e: any) {
-    console.error(e);
-    result.fb = e.message || "error";
+    result.fb = await postToFacebook(message, url);
+    if (result.fb === "success") {
+      console.log("Posted to Facebook.");
+    }
+  } catch {
+    result.fb = "error";
   }
 
   try {
-    await postToTwitter(message);
-    console.log("Posted to Twitter.");
-    result.twitter = "success";
-  } catch (error: any) {
-    console.error(error);
-    result.twitter = error.message || "error";
+    const twitterResult = await postToTwitter(message);
+    result.twitter = twitterResult === "skipped" ? "skipped" : "success";
+    if (result.twitter === "success") {
+      console.log("Posted to Twitter.");
+    }
+  } catch {
+    result.twitter = "error";
   }
   } else {
     console.log("No need to post.");
@@ -103,5 +129,43 @@ const SocialMediaRobot = async (req: NextApiRequest, res: NextApiResponse) => {
 
   res.status(200).json({ result });
 };
+
+function isAuthorizedCronRequest(req: NextApiRequest) {
+  const configuredSecret = process.env.CRON_SECRET;
+  if (!configuredSecret) {
+    return false;
+  }
+
+  const providedSecret = getProvidedCronSecret(req);
+  if (!providedSecret) {
+    return false;
+  }
+
+  const configuredBuffer = Buffer.from(configuredSecret);
+  const providedBuffer = Buffer.from(providedSecret);
+
+  return (
+    configuredBuffer.length === providedBuffer.length &&
+    timingSafeEqual(configuredBuffer, providedBuffer)
+  );
+}
+
+function getProvidedCronSecret(req: NextApiRequest) {
+  const headerValue = req.headers["x-cron-secret"];
+  if (typeof headerValue === "string") {
+    return headerValue;
+  }
+
+  if (Array.isArray(headerValue)) {
+    return headerValue[0];
+  }
+
+  const queryValue = req.query.secret;
+  if (typeof queryValue === "string") {
+    return queryValue;
+  }
+
+  return undefined;
+}
 
 export default SocialMediaRobot;

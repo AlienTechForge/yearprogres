@@ -245,6 +245,7 @@ export default function CreateProgressModal({
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="例如：專案完成倒數"
+              maxLength={100}
               required
             />
           </div>
