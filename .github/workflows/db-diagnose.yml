@@ -62,6 +62,8 @@ jobs:
           docker exec \
             -e MYSQL_PWD="${DB_PASSWORD}" \
             mysql mysql \
+            -h127.0.0.1 \
+            -P3306 \
             -u"${DB_USER}" \
             --database="${DB_NAME}" \
             --table \
