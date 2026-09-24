@@ -116,11 +116,25 @@ jobs:
         shell: bash
         run: docker pull "${IMAGE_NAME}:${GITHUB_SHA}"
 
-      - name: Ensure docker network
+      - name: Check Docker network
         shell: bash
         run: |
-          docker network create "${DOCKER_NETWORK}" 2>/dev/null || true
-          docker network connect "${DOCKER_NETWORK}" mysql 2>/dev/null || true
+          docker network inspect "${DOCKER_NETWORK}" >/dev/null 2>&1 || {
+            echo "::error::Docker network ${DOCKER_NETWORK} 不存在"
+            exit 1
+          }
+      
+          docker inspect mysql >/dev/null 2>&1 || {
+            echo "::error::MySQL container 不存在"
+            exit 1
+          }
+      
+          if ! docker inspect mysql \
+            --format '{{range $name, $_ := .NetworkSettings.Networks}}{{println $name}}{{end}}' \
+            | grep -qx "${DOCKER_NETWORK}"; then
+            echo "::error::MySQL container 不在 ${DOCKER_NETWORK} network"
+            exit 1
+          fi
 
       - name: Stop old container
         shell: bash
